@@ -1,6 +1,7 @@
 import os
 import sys
 
+from sklearn.model_selection import KFold
 from torch.cpu.amp import autocast
 from tqdm import tqdm
 import argparse
@@ -70,18 +71,15 @@ class RAVDESSDataset(Dataset):
         self.labels = []
 
         # Load data
-        for actor_folder in os.listdir(data_dir):
-            actor_path = os.path.join(data_dir, actor_folder)
-            if os.path.isdir(actor_path):
-                for label_folder in os.listdir(actor_path):
-                    label_path = os.path.join(actor_path, label_folder)
-                    if os.path.isdir(label_path):
-                        label = int(label_folder)  # Adjust if labels are stored differently
-                        for video_file in os.listdir(label_path):
-                            if video_file.endswith('.pt'):
-                                video_path = os.path.join(label_path, video_file)
-                                self.samples.append(video_path)
-                                self.labels.append(label)
+        for label_folder in os.listdir(data_dir):
+            label_path = os.path.join(data_dir, label_folder)
+            if os.path.isdir(label_path) and label_folder.isdigit():  # Ensure it's a label folder
+                label = int(label_folder) - 1  # Convert "01" to 0-based index for labels
+                for video_file in os.listdir(label_path):
+                    if video_file.startswith('Actor_') and video_file.endswith('.pt'):
+                        video_path = os.path.join(label_path, video_file)
+                        self.samples.append(video_path)
+                        self.labels.append(label)
 
     def __len__(self):
         return len(self.samples)
@@ -163,6 +161,18 @@ class AttentionLoss(nn.Module):
             loss = 0
         return loss
 
+class LabelSmoothingCrossEntropy(nn.Module):
+    def __init__(self, smoothing=0.1):
+        super(LabelSmoothingCrossEntropy, self).__init__()
+        self.smoothing = smoothing
+
+    def forward(self, inputs, targets):
+        log_probs = F.log_softmax(inputs, dim=-1)
+        n_classes = inputs.size(-1)
+        smoothed_labels = torch.full_like(log_probs, self.smoothing / (n_classes - 1))
+        smoothed_labels.scatter_(1, targets.unsqueeze(1), 1 - self.smoothing)
+        loss = -torch.sum(smoothed_labels * log_probs, dim=-1).mean()
+        return loss
 
 def run_training():
     # args = parse_args()
@@ -178,35 +188,35 @@ def run_training():
     model = DDAMNet(num_class=8, num_head=2)
     model.to(device)
 
-    # Get all actor directories
-    actors = [actor for actor in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, actor))]
-
-    # Shuffle actors for random split
-    random.seed(42)  # For reproducibility
-    random.shuffle(actors)
-
-    # Split actors into train, val, and test sets
-    train_actors = actors[:int(0.7 * len(actors))]
-    val_actors = actors[int(0.7 * len(actors)):int(0.85 * len(actors))]
-    test_actors = actors[int(0.85 * len(actors)):]
-
-    # Split dataset into train, val, and test
-    split_dataset(train_actors, train_dir)
-    split_dataset(val_actors, val_dir)
-    split_dataset(test_actors, test_dir)
+    # # Get all actor directories
+    # actors = [actor for actor in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, actor))]
+    #
+    # # Shuffle actors for random split
+    # random.seed(42)  # For reproducibility
+    # random.shuffle(actors)
+    #
+    # # Split actors into train, val, and test sets
+    # train_actors = actors[:int(0.7 * len(actors))]
+    # val_actors = actors[int(0.7 * len(actors)):int(0.85 * len(actors))]
+    # test_actors = actors[int(0.85 * len(actors)):]
+    #
+    # # Split dataset into train, val, and test
+    # split_dataset(train_actors, train_dir)
+    # split_dataset(val_actors, val_dir)
+    # split_dataset(test_actors, test_dir)
 
     # Create datasets
     dirname = os.path.dirname(__file__)
     print(dirname)
-    print(dirname + r"/FPS16_DATA/TRAIN")
-    train_dataset = RAVDESSDataset(r"D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\FPS16_AUGMENTS\TRAIN")
-    val_dataset = RAVDESSDataset(r"D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\FPS16_AUGMENTS\VAL")
-    test_dataset = RAVDESSDataset(r"D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\FPS16_AUGMENTS\TEST")
+    print(dirname + r"/V2_FPS16_AUGMENTS/TRAIN")
+    train_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/TRAIN")
+    val_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/VAL")
+    test_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/TEST")
 
     # Create data loaders
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=6, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True, num_workers=6, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True, num_workers=6, pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
+    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
 
     # train_dataset = datasets.ImageFolder(f'{args.aff_path}/train')
     # if args.num_class == 7:  # ignore the 8-th class
@@ -245,13 +255,12 @@ def run_training():
     class_weights = 1. / class_counts
     class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
     criterion_cls = torch.nn.CrossEntropyLoss(class_weights).to(device)
+    # criterion_cls = LabelSmoothingCrossEntropy(smoothing=0.1).to(device) TRY NEXT
     criterion_at = AttentionLoss()
-    params = list(model.parameters())
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-3)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-2)
     # optimizer = torch.optim.Adam(params, lr=0.001,  weight_decay=1e-4)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, min_lr=1e-6)
-    scaler = torch.amp.GradScaler('cuda')
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, min_lr=1e-6) TRY NEXT
 
     for epoch in tqdm(range(1, epochs + 1)):
         torch.cuda.empty_cache()
@@ -268,14 +277,12 @@ def run_training():
             imgs = imgs.to(device)
             targets = targets.to(device)
 
-            with torch.amp.autocast(device_type="cuda"):
-                out, feat, heads = model(imgs)
-                loss = criterion_cls(out, targets) + 0.1 * criterion_at(heads)
+            out, feat, heads = model(imgs)
+            loss = criterion_cls(out, targets) + 0.1 * criterion_at(heads)
 
-            scaler.scale(loss).backward()
+            loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            scaler.step(optimizer)
-            scaler.update()
+            optimizer.step()
 
             # loss.backward()
             # optimizer.step()
@@ -326,7 +333,8 @@ def run_training():
                 torch.save({'iter': epoch,
                             'model_state_dict': model.state_dict(),
                             'optimizer_state_dict': optimizer.state_dict(), },
-                           os.path.join('checkpoints', "RAVDESS_epoch" + str(epoch) + "_acc" + str(acc) + ".pth"))
+                           os.path.join(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Visual_Model\saved_models",
+                                        "RAVDESS_epoch" + str(epoch) + "_acc" + str(acc) + ".pth"))
                 tqdm.write('Model saved.')
 
             # elif acc > 0.632:

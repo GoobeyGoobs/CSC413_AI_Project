@@ -95,7 +95,7 @@ class CoordAtt3D(nn.Module):
 class CoordAttHead(nn.Module):
     def __init__(self):
         super().__init__()
-        self.CoordAtt = CoordAtt3D(256, 256)
+        self.CoordAtt = CoordAtt3D(128, 128)
 
     def forward(self, x):
         ca = self.CoordAtt(x)
@@ -119,9 +119,9 @@ class DDAMNet(nn.Module):
         # self.Linear = Linear_block(512, 512, groups=512, kernel=(7, 7, 7), stride=(1, 1, 1), padding=
         self.pool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.flatten = Flatten()
-        self.fc = nn.Linear(256, num_class)
-        self.bn = nn.BatchNorm1d(num_class)
         self.dropout = nn.Dropout(0.7)
+        self.fc = nn.Linear(128, num_class)
+        self.bn = nn.BatchNorm1d(num_class)
 
     def forward(self, x):
         x = self.features(x)
@@ -141,5 +141,6 @@ class DDAMNet(nn.Module):
         # y = self.Linear(y)
         y = self.pool(y)
         y = self.flatten(y)
+        y = self.dropout(y)
         out = self.fc(y)
         return out, x, head_out

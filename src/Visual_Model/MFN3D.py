@@ -1,4 +1,4 @@
-from torch.nn import Linear, Conv3d, BatchNorm1d, BatchNorm3d, PReLU, Sequential, Module, Dropout
+from torch.nn import Linear, Conv3d, BatchNorm1d, BatchNorm3d, PReLU, Sequential, Module, Dropout, Dropout3d
 import torch
 import torch.nn as nn
 
@@ -239,53 +239,58 @@ class Mix_Residual(Module):
 
 
 class MixedFeatureNet(Module):
-    def __init__(self, embedding_size=256, out_d=2, out_h=7, out_w=7):
+    def __init__(self, embedding_size=128, out_d=2, out_h=7, out_w=7):
         super(MixedFeatureNet, self).__init__()
         # Input size: L x 112 x 112
-        self.conv1 = Conv_block(1, 32, kernel=(3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1))
+        self.conv1 = Conv_block(1, 16, kernel=(3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1))
         # L x 56 x 56
-        self.conv2_dw = Conv_block(32, 32, kernel=(3, 3, 3), stride=(1, 1, 1), padding=(1, 1, 1), groups=32)
-        self.conv_23 = Mix_Depth_Wise(32, 32, stride=(1, 2, 2), groups=64,
+        self.conv2_dw = Conv_block(16, 16, kernel=(3, 3, 3), stride=(1, 1, 1), padding=(1, 1, 1), groups=16)
+        self.conv_23 = Mix_Depth_Wise(16, 16, stride=(1, 2, 2), groups=32,
+                                      kernel_sizes=[(3, 3, 3), (5, 5, 5), (7, 7, 7)],
+                                      split_out_channels=[16, 8, 8])
+
+        # L x 28 x 28
+        self.conv_3 = Mix_Residual(16, num_block=3, groups=32, stride=(1, 1, 1),
+                                   kernel_sizes=[(3, 3, 3), (5, 5, 5)],
+                                   split_out_channels=[24, 8])
+        self.conv_34 = Mix_Depth_Wise(16, 32, stride=(1, 2, 2), groups=64,
                                       kernel_sizes=[(3, 3, 3), (5, 5, 5), (7, 7, 7)],
                                       split_out_channels=[32, 16, 16])
 
-        # L x 28 x 28
-        self.conv_3 = Mix_Residual(32, num_block=3, groups=64, stride=(1, 1, 1),
+        # L x 14 x 14
+        self.conv_4 = Mix_Residual(32, num_block=4, groups=64, stride=(1, 1, 1),
                                    kernel_sizes=[(3, 3, 3), (5, 5, 5)],
                                    split_out_channels=[48, 16])
-        self.conv_34 = Mix_Depth_Wise(32, 64, stride=(1, 2, 2), groups=128,
-                                      kernel_sizes=[(3, 3, 3), (5, 5, 5), (7, 7, 7)],
-                                      split_out_channels=[64, 32, 32])
-
-        # L x 14 x 14
-        self.conv_4 = Mix_Residual(64, num_block=4, groups=128, stride=(1, 1, 1),
-                                   kernel_sizes=[(3, 3, 3), (5, 5, 5)],
-                                   split_out_channels=[96, 32])
-        self.conv_45 = Mix_Depth_Wise(64, 128, stride=(1, 2, 2), groups=256,
+        self.conv_45 = Mix_Depth_Wise(32, 64, stride=(1, 2, 2), groups=128,
                                       kernel_sizes=[(3, 3, 3), (5, 5, 5), (7, 7, 7), (9, 9, 9)],
-                                      split_out_channels=[64, 64, 64, 64])
+                                      split_out_channels=[32, 32, 32, 32])
         # L x 7 x 7
-        self.conv_5 = Mix_Residual(128, num_block=2, groups=256, stride=(1, 1, 1),
+        self.conv_5 = Mix_Residual(64, num_block=2, groups=128, stride=(1, 1, 1),
                                    kernel_sizes=[(3, 3, 3), (5, 5, 5), (7, 7, 7)],
-                                   split_out_channels=[86, 84, 86])
-        self.conv_6_sep = Conv_block(128, 256, kernel=(1, 1, 1), stride=(1, 1, 1), padding=(0, 0, 0))
-        self.conv_6_dw = Linear_block(256, 256, groups=256, kernel=(out_d, out_h, out_w), stride=(1, 1, 1), padding=(0, 0, 0))
+                                   split_out_channels=[43, 42, 43])
+        self.conv_6_sep = Conv_block(64, 128, kernel=(1, 1, 1), stride=(1, 1, 1), padding=(0, 0, 0))
+        self.dropout_conv6 = Dropout3d(0.7)
+        self.conv_6_dw = Linear_block(128, 128, groups=128, kernel=(7, out_h, out_w), stride=(1, 1, 1), padding=(0, 0, 0))
         self.conv_6_flatten = Flatten()
-        self.linear = Linear(256, embedding_size, bias=False)
+        self.linear = Linear(128, embedding_size, bias=False)
         self.bn = BatchNorm1d(embedding_size)
-        self.dropout = Dropout(0.7)
+
 
     def forward(self, x):
         out = self.conv1(x)
-        out = self.dropout(out)
+        # out = self.dropout_conv1(out)
         out = self.conv2_dw(out)
         out = self.conv_23(out)
+        # out = self.dropout_conv23(out)
         out = self.conv_3(out)
         out = self.conv_34(out)
+        # out = self.dropout_conv34(out)
         out = self.conv_4(out)
         out = self.conv_45(out)
+        # out = self.dropout_conv45(out)
         out = self.conv_5(out)
         out = self.conv_6_sep(out)
+        out = self.dropout_conv6(out)
         out = self.conv_6_dw(out)
         out = self.conv_6_flatten(out)
         out = self.linear(out)
