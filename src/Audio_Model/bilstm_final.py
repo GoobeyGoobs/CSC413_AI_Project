@@ -1,11 +1,29 @@
 import numpy as np
-
+import pickle
 def softmax(x):
     s = np.sum(np.exp(x), axis=1).reshape(-1,1)
     return np.exp(x)/s
 
 def sigmoid(x):
     return 1/(1 + np.exp(-x))
+
+def initialize_params(n_x, n_h, n_y):
+    wi = np.random.randn(n_h, n_x)
+    wf = np.random.randn(n_h, n_x)
+    wo = np.random.randn(n_h, n_x)
+    wc = np.random.randn(n_h, n_x)
+    wy = np.random.randn(n_y, n_h)
+
+    bi = np.zeros((n_h, 1))
+    bf = np.zeros((n_h, 1))
+    bo = np.zeros((n_h, 1))
+    bc = np.zeros((n_h, 1))
+    by = np.zeros((n_y, 1))
+
+    params = {"bf": bf, "wf": wf, "bi": bi, "wi": wi,\
+               "bc": bc, "wc": wc, "bo": bo, "wo": wo, "wy": wy, "by": by}
+    return params
+
 
 def lstmcell_forward(xt, h_prev, c_prev, params):
     """
@@ -63,7 +81,7 @@ def lstmcell_forward(xt, h_prev, c_prev, params):
     bprop_vals = (h_next, c_next, h_prev, c_prev, ft, it, cct, ot, xt, params)
     return h_next, c_next, yt_pred, bprop_vals
 
-def lstmcell_backward(dh_next_forward, dc_next_forward, dh_next_backward, dc_next_backward, bprop_vals):
+def lstmcell_backward(dh_next, dc_next,bprop_vals):
     """
     Parameters:
     dh_next_forward: gradient of next hidden state
@@ -91,57 +109,38 @@ def lstmcell_backward(dh_next_forward, dc_next_forward, dh_next_backward, dc_nex
     n_h, batch_size = h_next.shape
 
     # Find gradients for gates
-    dot_forward = dh_next_forward * np.tanh(c_next) * ot * (1 - ot)
-    dcct_forward = (dc_next_forward * it + ot (1 - np.square(np.tanh(c_next))) * it * dh_next_forward) * (1 - np.square(cct))
-    dit_forward = (dc_next_forward * cct + ot * (1 - np.square(np.tanh(c_next))) * cct * dh_next_forward) * it * (1 - it)
-    dft_forward = (dc_next_forward * c_prev + ot * (1 - np.square(np.tanh(c_next))) * c_prev * dh_next_forward) * ft * (1 - ft)
+    dot = dh_next * np.tanh(c_next) * ot * (1 - ot)
+    dcct = (dc_next * it + ot (1 - np.square(np.tanh(c_next))) * it * dh_next) * (1 - np.square(cct))
+    dit = (dc_next * cct + ot * (1 - np.square(np.tanh(c_next))) * cct * dh_next) * it * (1 - it)
+    dft = (dc_next * c_prev + ot * (1 - np.square(np.tanh(c_next))) * c_prev * dh_next) * ft * (1 - ft)
 
-    dot_backward = dh_next_backward * np.tanh(c_next) * ot * (1 - ot)
-    dcct_backward = (dc_next_backward * it + ot (1 - np.square(np.tanh(c_next))) * it * dh_next_backward) * (1 - np.square(cct))
-    dit_backward = (dc_next_backward * cct + ot * (1 - np.square(np.tanh(c_next))) * cct * dh_next_backward) * it * (1 - it)
-    dft_backward = (dc_next_backward * c_prev + ot * (1 - np.square(np.tanh(c_next))) * c_prev * dh_next_backward) * ft * (1 - ft)
+
 
     c_input = np.concatenate((h_prev, xt), axis=0)
 
     # Find gradients for weights, biases
-    dwo_forward = np.dot(dot_forward, c_input.T)
-    dbo_forward = np.sum(dot_forward, axis = 1, keepdims = True)
-    dwc_forward = np.dot(dcct_forward, c_input.T)
-    dbc_forward = np.sum(dcct_forward, axis = 1, keepdims = True)
-    dwi_forward = np.dot(dit_forward, c_input.T)
-    dbi_forward = np.sum( dit_forward, axis = 1, keepdims = True)
-    dwf_forward = np.dot(dft_forward, c_input.T)
-    dbf_forward = np.sum(dft_forward, axis = 1, keepdims = True)
+    dwo = np.dot(dot, c_input.T)
+    dbo = np.sum(dot, axis = 1, keepdims = True)
+    dwc = np.dot(dcct, c_input.T)
+    dbc = np.sum(dcct, axis = 1, keepdims = True)
+    dwi = np.dot(dit, c_input.T)
+    dbi = np.sum( dit, axis = 1, keepdims = True)
+    dwf = np.dot(dft, c_input.T)
+    dbf = np.sum(dft, axis = 1, keepdims = True)
 
-    dwo_backward = np.dot(dot_backward, c_input.T)
-    dbo_backward = np.sum(dot_backward, axis = 1, keepdims = True)
-    dwc_backward = np.dot(dcct_backward, c_input.T)
-    dbc_backward = np.sum(dcct_backward, axis = 1, keepdims = True)
-    dwi_backward = np.dot(dit_backward, c_input.T)
-    dbi_backward = np.sum( dit_backward, axis = 1, keepdims = True)
-    dwf_backward = np.dot(dft_backward, c_input.T)
-    dbf_backward = np.sum(dft_backward, axis = 1, keepdims = True)
 
-    dh_prev = np.dot(params["wf"][:,:n_h].T, dft_forward) + np.dot(params["wi"][:,:n_h].T, dit_forward)\
-          + np.dot(params["wc"][:,:n_h].T, dcct_forward) + np.dot(params["wo"][:,:n_h].T, dot_forward)\
-              + np.dot(params["wf"][:,:n_h].T, dft_backward) + np.dot(params["wi"][:,:n_h].T, dit_backward)\
-                  + np.dot(params["wc"][:,:n_h].T, dcct_backward) + np.dot(params["wo"][:,:n_h].T, dot_backward)
+    dh_prev = np.dot(params["wf"][:,:n_h].T, dft) + np.dot(params["wi"][:,:n_h].T, dit)\
+          + np.dot(params["wc"][:,:n_h].T, dcct) + np.dot(params["wo"][:,:n_h].T, dot)
     
-    dc_prev = dh_next_forward * ft + ot * (1 - np.square(np.tanh(c_next))) * ft * dh_next_forward\
-          + dh_next_backward * ft + ot * (1 - np.square(np.tanh(c_next))) * ft * dh_next_backward
+    dc_prev = dh_next * ft + ot * (1 - np.square(np.tanh(c_next))) * ft * dh_next
     
-    dxt = np.dot(params["wf"][:,n_h:].T, dft_forward) + np.dot(params["wi"][:,n_h:].T, dit_forward)\
-          + np.dot(params["wc"][:,n_h:].T, dcct_forward) + np.dot(params["wo"][:,n_h:].T, dot_forward)\
-              + np.dot(params["wf"][:,n_h:].T, dft_backward) + np.dot(params["wi"][:,n_h:].T, dit_backward)\
-                  + np.dot(params["wc"][:,n_h:].T, dcct_backward) + np.dot(params["wo"][:,n_h:].T, dot_backward)
+    dxt = np.dot(params["wf"][:,n_h:].T, dft) + np.dot(params["wi"][:,n_h:].T, dit)\
+          + np.dot(params["wc"][:,n_h:].T, dcct) + np.dot(params["wo"][:,n_h:].T, dot)
     
-    grads = {"dxt": dxt, "dc_prev": dc_prev, "dh_prev": dh_prev, "dbf_forward": dbf_forward,\
-              "dwf_forward": dwf_forward, "dbi_forward": dbi_forward, "dwi_forward": dwi_forward,\
-                  "dbc_forward": dbc_forward, "dwc_forward": dwc_forward, "dbo_forward": dbo_forward,\
-                      "dwo_forward": dwo_forward,
-                  "dbf_backward": dbf_backward, "dwf_backward": dwf_backward, "dbi_backward": dbi_backward,\
-                      "dwi_backward": dwi_backward, "dbc_backward": dbc_backward, "dwc_backward": dwc_backward,\
-                          "dbo_backward": dbo_backward, "dwo_backward": dwo_backward}
+    grads = {"dxt": dxt, "dc_prev": dc_prev, "dh_prev": dh_prev, "dbf": dbf,\
+              "dwf": dwf, "dbi": dbi, "dwi": dwi,\
+                  "dbc": dbc, "dwc": dwc, "dbo": dbo,\
+                      "dwo": dwo}
     return grads
 
 
@@ -216,7 +215,62 @@ def bilstm_backward(dh, bilstm_bpropvals):
     dbc = np.zeros(dbf.shape)
     dbo = np.zeros(dbf.shape)
 
-    for t in range(t_x):
-        grad = lstmcell_backward(dh_prev, dc_prev, dh_prev, dc_prev, )
+    for t in reversed(range(t_x)):
+        grad_forward = lstmcell_backward(dh_prev[:,:,t], dc_prev, forward[t])
+        grad_backward = lstmcell_backward(dh_prev[:,:,t], dc_prev, backward[t_x - 1 - t])
+        dx[:,:,t] = grad_forward["dxt"] + grad_backward["dxt"]
+        dwf += grad_forward["dwf"] + grad_backward["dwf"]
+        dwi += grad_forward["dwi"] + grad_backward["dwi"]
+        dwc += grad_forward["dwc"] + grad_backward["dwc"]
+        dwo += grad_forward["dwo"] + grad_backward["dwo"]
+        dbf += grad_forward["dbf"] + grad_backward["dbf"]
+        dbi += grad_forward["dbi"] + grad_backward["dbi"]
+        dbc += grad_forward["dbc"] + grad_backward["dbc"]
+        dbo += grad_forward["dbo"] + grad_backward["dbo"]
+    dh0 = grad_forward["dh_prev"] + grad_backward["dh_prev"]
 
+    grads = {"dx": dx, "dh0": dh0, "dbf": dbf, "dwf": dwf, "dbi": dbi, "dwi": dwi,\
+              "dbc": dbc, "dwc": dwc, "dbo": dbo, "dwo": dwo}
+    return grads
+
+def update_gradients(params, grads, learning_rate=0.001):
+    """
+    Updates the parameters using the computed gradients.
+
+    Parameters:
+    params: dictionary containing the current parameters (weights and biases)
+    grads: dictionary containing the gradients (dWf, dWi, dWc, dWo, dbf, dbi, dbc, dbo, etc.)
+    learning_rate: the learning rate for parameter updates
     
+    Returns:
+    updated_params: dictionary with updated parameters
+    """
+    updated_params = {}
+
+    # Update weights and biases for each gate in the LSTM cell and the output layer
+    updated_params['wf'] = params['wf'] - learning_rate * grads['dwf']
+    updated_params['wi'] = params['wi'] - learning_rate * grads['dwi']
+    updated_params['wc'] = params['wc'] - learning_rate * grads['dwc']
+    updated_params['wo'] = params['wo'] - learning_rate * grads['dwo']
+    #updated_params['wy'] = params['wy'] - learning_rate * grads['dwo']  # If needed
+    updated_params['bf'] = params['bf'] - learning_rate * grads['dbf']
+    updated_params['bi'] = params['bi'] - learning_rate * grads['dbi']
+    updated_params['bc'] = params['bc'] - learning_rate * grads['dbc']
+    updated_params['bo'] = params['bo'] - learning_rate * grads['dbo']
+    #updated_params['by'] = params['by'] - learning_rate * grads['dbo']  # If needed
+
+    return updated_params
+
+# Dense Layer for Classification
+class DenseLayer:
+    def __init__(self, input_dim, output_dim):
+        self.W = np.random.randn(output_dim, input_dim)
+        self.b = np.zeros((output_dim, 1))
+
+    def forward(self, x):
+        return np.dot(self.W, x.T).T + self.b.T
+
+def cross_entropy_loss(y_true, y_pred):
+    m = y_true.shape[0]
+    log_likelihood = -np.log(y_pred[range(m), y_true])
+    return np.sum(log_likelihood) / m
