@@ -2,7 +2,7 @@ import librosa
 import numpy as np
 import os
 
-def extract_mfcc(audio_dir, sr=22050, n_mfcc=13):
+def extract_mfcc(audio_dir, sr=22050, n_mfcc=48):
     mfcc_features = []
     labels = []
 

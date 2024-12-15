@@ -108,9 +108,6 @@ class DDAMNet(nn.Module):
 
         net = MixedFeatureNet()  # Use the updated 3D MixedFeatureNet
 
-        if pretrained:
-            net = torch.load(os.path.join('./pretrained/', "MFN_msceleb.pth"))
-
         self.features = nn.Sequential(*list(net.children())[:-4])  # Adjust according to the architecture
         self.num_head = num_head
         for i in range(int(num_head)):
