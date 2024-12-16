@@ -15,13 +15,13 @@ eps = sys.float_info.epsilon
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-# Define paths
-dataset_dir = r'D:\Uni\CSC413 Final Project\Datasets\TRANSFORMATIONS\V2_TRANSFORMED_DATA_16'  # Replace with your dataset directory path
-train_dir = (r'D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\V2_FPS16_AUGMENTS\TRAIN')       # Path to store training data
-val_dir = r'D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\V2_FPS16_AUGMENTS\VAL'           # Path to store validation data
-test_dir = r'D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\V2_FPS16_AUGMENTS\TEST'         # Path to store test data
 
-# Function to copy files for each split
+dataset_dir = r'D:\Uni\CSC413 Final Project\Datasets\TRANSFORMATIONS\V2_TRANSFORMED_DATA_16'  
+train_dir = (r'D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\V2_FPS16_AUGMENTS\TRAIN')      
+val_dir = r'D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\V2_FPS16_AUGMENTS\VAL'           
+test_dir = r'D:\Uni\CSC413 Final Project\Datasets\DATA_SPLITS\V2_FPS16_AUGMENTS\TEST'         
+
+
 def split_dataset(actor_list, dest_dir):
     for actor in actor_list:
         actor_path = os.path.join(dataset_dir, actor)
@@ -31,10 +31,10 @@ def split_dataset(actor_list, dest_dir):
                 dest_class_path = os.path.join(dest_dir, class_folder)
                 if not os.path.exists(dest_class_path):
                     os.makedirs(dest_class_path)
-                # Copy all files in the class folder to the destination
+                
                 for file in os.listdir(class_path):
                     src_file = os.path.join(class_path, file)
-                    dest_file = os.path.join(dest_class_path, f"{actor}_{file}")  # Keep track of actor in filename
+                    dest_file = os.path.join(dest_class_path, f"{actor}_{file}")  
                     shutil.copyfile(src_file, dest_file)
 
 class RAVDESSDataset(Dataset):
@@ -43,11 +43,11 @@ class RAVDESSDataset(Dataset):
         self.samples = []
         self.labels = []
 
-        # Load data
+        
         for label_folder in os.listdir(data_dir):
             label_path = os.path.join(data_dir, label_folder)
-            if os.path.isdir(label_path) and label_folder.isdigit():  # Ensure it's a label folder
-                label = int(label_folder) - 1  # Convert "01" to 0-based index for labels
+            if os.path.isdir(label_path) and label_folder.isdigit():  
+                label = int(label_folder) - 1  
                 for video_file in os.listdir(label_path):
                     if video_file.startswith('Actor_') and video_file.endswith('.pt'):
                         video_path = os.path.join(label_path, video_file)
@@ -59,7 +59,7 @@ class RAVDESSDataset(Dataset):
 
     def __getitem__(self, idx):
         video_path = self.samples[idx]
-        frames = torch.load(video_path)  # Shape: (channels, frames, height, width)
+        frames = torch.load(video_path)  
         label = self.labels[idx]
         return frames, label
 
@@ -104,14 +104,14 @@ def run_training():
         torch.backends.cudnn.enabled = True
         torch.cuda.empty_cache()
 
-    # Create datasets
+    
     dirname = os.path.dirname(__file__)
     print(dirname)
     print(dirname + r"/V2_FPS16_AUGMENTS/TRAIN")
     train_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/TRAIN")
     val_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/VAL")
 
-    # Create data loaders
+    
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
 
