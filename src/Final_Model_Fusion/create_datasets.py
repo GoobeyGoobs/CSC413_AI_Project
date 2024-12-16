@@ -17,9 +17,7 @@ VISUAL_DIR = r"D:\Uni\CSC413 Final Project\Datasets\EXTRACTIONS"
 AUDIO_DIR = r"E:\CSC413_Data\RAW_CLIPS"
 TEXT_DIR = r"E:\CSC413_Data\EXTRACTED_TEXT"
 PROCESSED_DATA_DIR = r"E:\CSC413_Data\FUSION_DATA"
-BATCH_SIZE = 2
 IMAGE_SIZE = (112, 112)
-NUM_WORKERS = 6
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Audio parameters
@@ -116,6 +114,7 @@ def preprocess_and_save(data_dir, save_dir):
                     mean = np.mean(mfcc, axis=1, keepdims=True)
                     std = np.std(mfcc, axis=1, keepdims=True) + 1e-6
                     norm = (mfcc - mean) / std
+                    print(norm.shape)
 
                     combined_data.append(norm)
 
@@ -132,7 +131,9 @@ def preprocess_and_save(data_dir, save_dir):
                         truncation=True,
                         return_tensors="pt",
                     )
-                    combined_data.append(embedding)
+                    input_ids = embedding['input_ids'].squeeze(0)
+                    attention_mask = embedding['attention_mask'].squeeze(0)
+                    combined_data.append((input_ids, attention_mask))
 
                     torch.save(combined_data, save_path)
 

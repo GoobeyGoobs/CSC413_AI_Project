@@ -22,6 +22,8 @@ import torch.nn.functional as F
 
 eps = sys.float_info.epsilon
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 # Define paths
 dataset_dir = r'D:\Uni\CSC413 Final Project\Datasets\TRANSFORMATIONS\V2_TRANSFORMED_DATA_16'  # Replace with your dataset directory path
@@ -216,7 +218,7 @@ def run_training():
     # Create data loaders
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
+
 
     # train_dataset = datasets.ImageFolder(f'{args.aff_path}/train')
     # if args.num_class == 7:  # ignore the 8-th class
@@ -344,6 +346,37 @@ def run_training():
             #                os.path.join('checkpoints', "affecnet8_epoch" + str(epoch) + "_acc" + str(acc) + ".pth"))
             #     tqdm.write('Model saved.')
 
+def test_model():
+    dirname = os.path.dirname(__file__)
+    test_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/TEST")
+    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
+
+    model = DDAMNet(num_class=8, num_head=2).to(device)
+    model.load_state_dict(torch.load(
+        r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Visual_Model\saved_models\RAVDESS_epoch20_acc0.6294.pth",
+        map_location=device)["model_state_dict"])
+
+    with torch.no_grad():
+        iter_cnt = 0
+        bingo_cnt = 0
+        sample_cnt = 0
+        model.eval()
+        print("Evaluating")
+        for imgs, targets in test_loader:
+            imgs = imgs.to(device)
+            targets = targets.to(device)
+            out, feat, heads = model(imgs)
+
+            iter_cnt += 1
+            _, predicts = torch.max(out, 1)
+            correct_num = torch.eq(predicts, targets)
+            bingo_cnt += correct_num.sum().cpu()
+            sample_cnt += out.size(0)
+
+        acc = bingo_cnt.float() / float(sample_cnt)
+        acc = np.around(acc.numpy(), 4)
+        print(f"Test accuracy:{acc}")
 
 if __name__ == "__main__":
-    run_training()
+    # run_training()
+    test_model()

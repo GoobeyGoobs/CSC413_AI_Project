@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 from src.Audio_Model.TorchBiLSTM import BiLSTMClassifier
-from src.Text_Model.BERT_CNN import BERT
+from src.Text_Model.BERT_CNN import BERTCNN
 from src.Visual_Model.DDA3D import DDAMNet
 
 # ==== PLACEHOLDERS FOR MODEL IMPORTS ====
@@ -27,13 +27,13 @@ def collate_fn(batch):
 # ==== INIT MODELS ====
 # Replace with correct class initializations and any arguments they require
 visual_model = DDAMNet().to(device)
-audio_model = BiLSTMClassifier().to(device)
-text_model = BERT().to(device)
+audio_model = BiLSTMClassifier(48, 64, 8, num_layers=2, dropout=0.0).to(device)
+text_model = BERTCNN(256, [2, 3, 4], 0.0).to(device)
 
 # Load state dicts for each model (replace with actual paths)
-visual_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Visual_Model\saved_models\RAVDESS_epoch20_acc0.6294.pth", map_location=device))
+visual_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Visual_Model\saved_models\RAVDESS_epoch20_acc0.6294.pth", map_location=device)["model_state_dict"])
 audio_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Audio_Model\best_model_trial_7_acc_0.5417.pt", map_location=device))
-text_model.load_state_dict(torch.load("path/to/text_model_state.pt", map_location=device))
+text_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\best_model_accuracy_1.0.pt", map_location=device))
 
 visual_model.eval()
 audio_model.eval()
@@ -76,16 +76,22 @@ with torch.no_grad():
         # audio_tensor: (time x 48)
         # We'll apply collate_fn to ensure proper shape
         # Since single example, just wrap it in a list and label as tensor
+        audio_tensor = torch.tensor(audio_tensor)
+        audio_tensor = audio_tensor.transpose(0, 1)
         audio_input, audio_label = collate_fn([(audio_tensor, torch.tensor(true_label))])
+        audio_tensor = audio_tensor.transpose(1, 0)
         audio_input = audio_input.to(device)  # shape: (1, time, 48)
         audio_label = audio_label.to(device)
 
         # text_tensor: already tokenized embeddings
         # Move to device, assume shape: (1, seq_len, embed_dim) or similar
-        if text_tensor.dim() == 2:
+        if text_tensor[0].dim() == 2:
             # If shape is (seq_len, embed_dim), add batch dimension
-            text_tensor = text_tensor.unsqueeze(0)
-        text_tensor = text_tensor.to(device)
+            text_tensor[0] = text_tensor[0].unsqueeze(0)
+        text_tensor_input_id = text_tensor[0].to(device)
+        text_tensor_att_mask = text_tensor[1].to(device)
+        text_tensor_input_id = text_tensor_input_id.unsqueeze(0)
+        text_tensor_att_mask = text_tensor_att_mask.unsqueeze(0)
 
         # Get predictions from each model
         # Assume each model outputs logits or probabilities over 8 classes.
@@ -94,14 +100,14 @@ with torch.no_grad():
 
         # Visual model forward (assume returns logits)
         v_logits = visual_model(visual_tensor)  # shape (1,8)
-        v_probs = F.softmax(v_logits, dim=1)
+        v_probs = F.softmax(v_logits[0], dim=1)
 
         # Audio model forward
         a_logits = audio_model(audio_input)  # shape (1,8)
         a_probs = F.softmax(a_logits, dim=1)
 
         # Text model forward
-        t_logits = text_model(text_tensor)  # shape (1,8)
+        t_logits = text_model(text_tensor_input_id, text_tensor_att_mask)  # shape (1,8)
         t_probs = F.softmax(t_logits, dim=1)
 
         # Apply fusion:
@@ -118,6 +124,8 @@ with torch.no_grad():
         if pred_label == true_label:
             correct += 1
         total += 1
+
+print(correct, total)
 
 accuracy = correct / total if total > 0 else 0.0
 print(f"Accuracy: {accuracy * 100:.2f}%")

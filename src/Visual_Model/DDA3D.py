@@ -1,7 +1,7 @@
 from torch import nn
-import torch
-from MFN3D import MixedFeatureNet  # Use the updated 3D version of MixedFeatureNet
+import torch  # Use the updated 3D version of MixedFeatureNet
 from torch.nn import Module
+from src.Visual_Model.MFN3D import MixedFeatureNet
 import os
 
 

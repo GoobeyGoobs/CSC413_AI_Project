@@ -1,42 +1,35 @@
+import os
+
 import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader, random_split
-from transformers import BertTokenizer, AdamW
+from transformers import BertTokenizer, AdamW, BertModel
 from torch.cuda.amp import autocast, GradScaler
 import optuna
 
 # Device Configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# MELDBertDataset
-class MELDBertDataset(Dataset):
-    def __init__(self, file_path, tokenizer, max_len=64, mask_percentage=0.15):
-        self.df = pd.read_csv(file_path)[['Utterance', 'Emotion']]
-        self.emotion_mapping = {
-            "neutral": 0,
-            "joy": 1,
-            "surprise": 2,
-            "anger": 3,
-            "sadness": 4,
-            "disgust": 5,
-            "fear": 6,
-        }
-        self.df['Emotion'] = self.df['Emotion'].map(self.emotion_mapping)
+# Dataset Class
+class RAVDESSBertDataset(Dataset):
+    def __init__(self, file_path, tokenizer, max_len=64):
+        self.df = pd.read_csv(file_path)[['transcription']]
         self.tokenizer = tokenizer
         self.max_len = max_len
-        self.mask_percentage = mask_percentage
+        # Placeholder labels (replace with actual labels when available)
+        self.df['emotion'] = 0
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        utterance = row['Utterance']
-        emotion_label = torch.tensor(row['Emotion'], dtype=torch.long)
+        transcription = row['transcription']
+        emotion_label = torch.tensor(row['emotion'], dtype=torch.long)
 
         encoding = self.tokenizer(
-            utterance,
+            transcription,
             max_length=self.max_len,
             padding="max_length",
             truncation=True,
@@ -48,7 +41,7 @@ class MELDBertDataset(Dataset):
 
         return input_ids, attention_mask, emotion_label
 
-# Attention and BERT Architecture
+# Attention Module
 class AttentionHead(nn.Module):
     def __init__(self, dim_inp, dim_out):
         super(AttentionHead, self).__init__()
@@ -62,7 +55,7 @@ class AttentionHead(nn.Module):
         scores = torch.bmm(query, key.transpose(1, 2)) / scale
         if attention_mask is not None:
             attention_mask = attention_mask.unsqueeze(1)
-            scores = scores.masked_fill(attention_mask == 0, -1e9)
+            scores = scores.float().masked_fill(attention_mask == 0, -1e9).to(input_tensor.dtype)
         attn = nn.functional.softmax(scores, dim=-1)
         return torch.bmm(attn, value)
 
@@ -94,19 +87,33 @@ class Encoder(nn.Module):
         context = self.attention(input_tensor, attention_mask)
         return self.norm(self.feed_forward(context))
 
-class BERT(nn.Module):
-    def __init__(self, vocab_size, dim_inp, dim_out, attention_heads=4, dropout=0.1):
-        super(BERT, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, dim_inp)
-        self.encoder = Encoder(dim_inp, dim_out, attention_heads, dropout)
-        self.classification_layer = nn.Linear(dim_inp, 7)
+# BERT-CNN Model
+class BERTCNN(nn.Module):
+    def __init__(self, num_filters, kernel_sizes, dropout=0.1):
+        super(BERTCNN, self).__init__()
+        self.embedding = nn.Embedding(30522, 768)  # Standard BERT embedding
+        self.encoder = Encoder(dim_inp=768, dim_out=768)
 
-    def forward(self, input_tensor, attention_mask):
-        embedded = self.embedding(input_tensor)
-        encoded = self.encoder(embedded, attention_mask)
-        return self.classification_layer(encoded[:, 0, :])
+        self.convs = nn.ModuleList([
+            nn.Conv1d(in_channels=768, out_channels=num_filters, kernel_size=k)
+            for k in kernel_sizes
+        ])
 
-# BertTrainer with Validation Support
+        self.fc = nn.Linear(len(kernel_sizes) * num_filters, 8)  # 7 classes
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, input_ids, attention_mask):
+        embedded = self.embedding(input_ids)  # Shape: (batch_size, seq_len, 768)
+        encoded = self.encoder(embedded, attention_mask)  # Shape: (batch_size, seq_len, 768)
+
+        encoded = encoded.permute(0, 2, 1)  # Change to (batch_size, 768, seq_len)
+        cnn_outs = [torch.relu(conv(encoded)) for conv in self.convs]
+        pooled = [torch.max(out, dim=2)[0] for out in cnn_outs]
+        concat = torch.cat(pooled, dim=1)
+        logits = self.fc(self.dropout(concat))
+        return logits
+
+# Trainer
 class BertTrainer:
     def __init__(self, model, train_loader, val_loader, lr, epochs):
         self.model = model
@@ -163,19 +170,26 @@ class BertTrainer:
                 _, preds = torch.max(outputs, dim=1)
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
-        return correct / total  # Validation accuracy
+        acc = correct / total
+        model_path = f"best_model_accuracy_{acc}.pt"
+        torch.save(self.model.state_dict(), model_path)
+        return correct / total
 
-# Objective function for Optuna
+
+# Optuna Objective
+
 def objective(trial):
-    # Suggest hyperparameters
-    learning_rate = trial.suggest_loguniform("lr", 1e-6, 1e-3)
-    batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
-    dim_inp = trial.suggest_categorical("dim_inp", [128, 256, 512, 768])
-    dim_out = trial.suggest_categorical("dim_out", [512, 1024, 2048, 3072])
-    attention_heads = trial.suggest_categorical("attention_heads", [4, 8, 12])
-    dropout = trial.suggest_uniform("dropout", 0.1, 0.5)
+    # learning_rate = trial.suggest_loguniform("lr", 1e-6, 1e-3)
+    # batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
+    # num_filters = trial.suggest_categorical("num_filters", [64, 128, 256])
+    # kernel_sizes = trial.suggest_categorical("kernel_sizes", [[2, 3, 4], [3, 4, 5]])
+    # dropout = trial.suggest_uniform("dropout", 0.1, 0.5)
+    learning_rate = 2.375e-5
+    batch_size = 32
+    num_filters = 256
+    kernel_sizes = [2, 3, 4]
+    dropout = 0.22318
 
-    # Split dataset into training and validation
     dataset_size = len(dataset)
     train_size = int(0.8 * dataset_size)
     val_size = dataset_size - train_size
@@ -184,39 +198,30 @@ def objective(trial):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
 
-    # Define model
-    model = BERT(
-        vocab_size=tokenizer.vocab_size,
-        dim_inp=dim_inp,
-        dim_out=dim_out,
-        attention_heads=attention_heads,
+    model = BERTCNN(
+        num_filters=num_filters,
+        kernel_sizes=kernel_sizes,
         dropout=dropout,
     ).to(device)
 
-    # Use BertTrainer
     trainer = BertTrainer(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         lr=learning_rate,
-        epochs=3,  # Fixed for tuning
+        epochs=5,  # Fixed for tuning
     )
 
-    # Train and validate
     trainer.train()
     validation_accuracy = trainer.validate()
-    return validation_accuracy  # Return validation accuracy
-
+    return validation_accuracy
 
 if __name__ == "__main__":
     # Main Script
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-    dataset_path = "/content/train_sent_emo.csv"
-    dataset = MELDBertDataset(file_path=dataset_path, tokenizer=tokenizer, max_len=64)
+    dataset_path = r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\transcriptions.csv"
+    dataset = RAVDESSBertDataset(file_path=dataset_path, tokenizer=tokenizer, max_len=64)
 
-    # Optuna optimization
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=20)
-
-    # Best hyperparameters
+    study.optimize(objective, n_trials=3)
     print("Best hyperparameters:", study.best_params)

@@ -221,12 +221,32 @@ def objective(trial):
             torch.save(model.state_dict(), model_path)
     print(f"Best Validation Accuracy: {best_val_acc}")
 
-if __name__ == "__main__":
-    # split_data()
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=10)  # adjust n_trials as needed
+def test():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_loader, val_loader, test_loader = get_dataloaders(batch_size=16)
+    model = BiLSTMClassifier(48, 64, 8, num_layers=2, dropout=0.0).to(device)
+    model.load_state_dict(
+        torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Audio_Model\best_model_trial_7_acc_0.5417.pt",
+                   map_location=device))
+    model.eval()
+    total_correct = 0
+    total_samples = 0
+    with torch.no_grad():
+        for (mfccs, labels) in test_loader:
+            mfccs, labels = mfccs.to(device), labels.to(device)
+            outputs = model(mfccs)
+            total_correct += (outputs.argmax(1) == labels).sum().item()
+            total_samples += labels.size(0)
+    avg_acc = total_correct / total_samples
+    print(f"Test Accuracy: {avg_acc}")
 
-    print("Best trial:")
-    trial = study.best_trial
-    print(trial.params)
-    print("Best validation accuracy:", trial.value)
+if __name__ == "__main__":
+    test()
+    # split_data()
+    # study = optuna.create_study(direction='maximize')
+    # study.optimize(objective, n_trials=10)  # adjust n_trials as needed
+    #
+    # print("Best trial:")
+    # trial = study.best_trial
+    # print(trial.params)
+    # print("Best validation accuracy:", trial.value)
