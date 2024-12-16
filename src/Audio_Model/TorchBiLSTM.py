@@ -30,9 +30,8 @@ class BiLSTMClassifier(nn.Module):
         self.fc = nn.Linear(hidden_dim * 2, num_classes)
 
     def forward(self, x):
-        # x: (batch, seq_len, input_dim)
         lstm_out, _ = self.lstm(x)
-        out = lstm_out[:, -1, :]  # last time step
+        out = lstm_out[:, -1, :]
         out = self.fc(out)
         return out
 
@@ -45,11 +44,9 @@ class MFCCDataset(Dataset):
 
     def __getitem__(self, idx):
         fpath, label = self.pairs[idx]
-        mfcc = np.load(fpath)  # shape (n_mfcc, time)
-        # Transpose to (time, n_mfcc) to be compatible with LSTM (batch_first=True)
-        mfcc = mfcc.T  # (time, n_mfcc)
+        mfcc = np.load(fpath)
+        mfcc = mfcc.T 
 
-        # Convert to torch tensors
         mfcc_tensor = torch.tensor(mfcc, dtype=torch.float32)
         label_tensor = torch.tensor(label, dtype=torch.long)
         return mfcc_tensor, label_tensor
@@ -59,12 +56,10 @@ def split_data():
     DATA_SPLIT_DIR = r"E:\CSC413_Data\Data_split"
     os.makedirs(DATA_SPLIT_DIR, exist_ok=True)
 
-    # Set a random seed for reproducibility
     random.seed(42)
 
     actors = sorted([d for d in os.listdir(ORIGINAL_TRANSFORMED_ROOT) if os.path.isdir(os.path.join(ORIGINAL_TRANSFORMED_ROOT, d))])
 
-    # Shuffle actors and split 80-10-10
     random.shuffle(actors)
     num_actors = len(actors)
     train_count = int(0.8 * num_actors)
@@ -75,8 +70,6 @@ def split_data():
     val_actors = actors[train_count:train_count+val_count]
     test_actors = actors[train_count+val_count:]
 
-    # Identify class labels (the folder names inside the actor folders)
-    # Assume all actors have the same label structure
     sample_actor = train_actors[0] if len(train_actors) > 0 else actors[0]
     label_dirs = sorted([d for d in os.listdir(os.path.join(ORIGINAL_TRANSFORMED_ROOT, sample_actor)) if os.path.isdir(os.path.join(ORIGINAL_TRANSFORMED_ROOT, sample_actor, d))])
     label_to_idx = {label_name: i for i, label_name in enumerate(label_dirs)}
@@ -85,7 +78,6 @@ def split_data():
     val_pairs = get_file_label_pairs(val_actors, ORIGINAL_TRANSFORMED_ROOT, label_to_idx)
     test_pairs = get_file_label_pairs(test_actors, ORIGINAL_TRANSFORMED_ROOT, label_to_idx)
 
-    # Save these splits
     torch.save(train_pairs, os.path.join(DATA_SPLIT_DIR, 'train.pt'))
     torch.save(val_pairs, os.path.join(DATA_SPLIT_DIR, 'val.pt'))
     torch.save(test_pairs, os.path.join(DATA_SPLIT_DIR, 'test.pt'))
@@ -101,7 +93,6 @@ def get_file_label_pairs(actors_list, root_dir, label_to_idx):
             lbl_path = os.path.join(actor_path, lbl_dir)
             if os.path.isdir(lbl_path):
                 label_idx = label_to_idx[lbl_dir]
-                # Each file in lbl_path is a .npy file of MFCC
                 for npy_file in os.listdir(lbl_path):
                     if npy_file.endswith('.npy'):
                         fpath = os.path.join(lbl_path, npy_file)
@@ -174,7 +165,6 @@ def evaluate(model, criterion, val_loader):
 
 def objective(trial):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Hyperparameters to tune
     hidden_dim = trial.suggest_categorical('hidden_dim', [64, 128])
     learning_rate = trial.suggest_float('lr', 1e-4, 1e-2, log=True)
     num_layers = trial.suggest_int('num_layers', 1, 2)
@@ -198,13 +188,12 @@ def objective(trial):
     # optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, alpha=0.9, eps=1e-7, weight_decay=0.0)
     best_val_acc = 0.0
-    num_epochs = 15  # You can increase this
+    num_epochs = 15 
     for epoch in range(num_epochs):
         train_loss, train_acc = train_one_epoch(model, optimizer, criterion, train_loader)
         val_loss, val_acc = evaluate(model, criterion, val_loader)
         print(f"Training Loss: {train_loss}, Training Accuracy: {train_acc}")
         print(f"Validation Loss: {val_loss}, Validation Accuracy: {val_acc}")
-        # Pruning if no improvement
         trial.report(val_acc, epoch)
         if trial.should_prune():
             raise optuna.TrialPruned()
@@ -236,11 +225,3 @@ def test():
 
 if __name__ == "__main__":
     test()
-    # split_data()
-    # study = optuna.create_study(direction='maximize')
-    # study.optimize(objective, n_trials=10)  # adjust n_trials as needed
-    #
-    # print("Best trial:")
-    # trial = study.best_trial
-    # print(trial.params)
-    # print("Best validation accuracy:", trial.value)
