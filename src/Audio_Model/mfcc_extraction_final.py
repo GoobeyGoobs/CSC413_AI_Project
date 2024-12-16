@@ -3,8 +3,8 @@ import librosa
 import numpy as np
 
 def extract_mfcc_features(input_dir, output_dir):
-    ORIGINAL_ROOT = input_dir # Path to augmented audio clips
-    TRANSFORMED_ROOT = output_dir # Path to save MFCCs
+    ORIGINAL_ROOT = input_dir 
+    TRANSFORMED_ROOT = output_dir 
 
     SAMPLE_RATE = 22050
     N_MFCC = 48
@@ -50,6 +50,6 @@ def extract_mfcc_features(input_dir, output_dir):
                             np.save(mfcc_save_path, norm)
 
 if __name__ == "__main__":
-    audio_dir = r"E:\CSC413_Data\AUDIO_CLIPS"  # Directory containing the augmented .wav files
-    output_dir = r"E:\CSC413_Data\ORDERED_DATA"  # Directory to save the processed datasets
+    audio_dir = r"E:\CSC413_Data\AUDIO_CLIPS"  
+    output_dir = r"E:\CSC413_Data\ORDERED_DATA"  
     extract_mfcc_features(audio_dir, output_dir)
