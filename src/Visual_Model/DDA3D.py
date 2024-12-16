@@ -1,5 +1,5 @@
 from torch import nn
-import torch  # Use the updated 3D version of MixedFeatureNet
+import torch  
 from torch.nn import Module
 from src.Visual_Model.MFN3D import MixedFeatureNet
 
@@ -61,22 +61,22 @@ class CoordAtt3D(nn.Module):
     def forward(self, x):
         identity = x
         n, c, d, h, w = x.size()
-        x_d = self.pool_d(x)  # Shape: (n, c, d, 1, 1)
-        x_h = self.pool_h(x)  # Shape: (n, c, 1, h, 1)
-        x_w = self.pool_w(x)  # Shape: (n, c, 1, 1, w)
+        x_d = self.pool_d(x)  
+        x_h = self.pool_h(x)  
+        x_w = self.pool_w(x)  
 
-        x_d = x_d.permute(0, 1, 3, 4, 2)  # (n, c, 1, 1, d)
-        x_h = x_h.permute(0, 1, 2, 4, 3)  # (n, c, 1, 1, h)
+        x_d = x_d.permute(0, 1, 3, 4, 2)  
+        x_h = x_h.permute(0, 1, 2, 4, 3)  
 
-        y = torch.cat([x_d, x_h, x_w], dim=4)  # Concatenate along the last dimension
+        y = torch.cat([x_d, x_h, x_w], dim=4)  
         y = self.conv1(y)
         y = self.bn1(y)
         y = self.relu(y)
 
         x_d, x_h, x_w = torch.split(y, [d, h, w], dim=4)
 
-        x_d = x_d.permute(0, 1, 4, 2, 3)  # (n, c, d, 1, 1)
-        x_h = x_h.permute(0, 1, 2, 4, 3)  # (n, c, 1, h, 1)
+        x_d = x_d.permute(0, 1, 4, 2, 3)  
+        x_h = x_h.permute(0, 1, 2, 4, 3)  
 
         x_d = self.conv_d(x_d).sigmoid()
         x_h = self.conv_h(x_h).sigmoid()
@@ -105,14 +105,14 @@ class DDAMNet(nn.Module):
     def __init__(self, num_class=8, num_head=2, dropout=0.0):
         super(DDAMNet, self).__init__()
 
-        net = MixedFeatureNet()  # Use the updated 3D MixedFeatureNet
+        net = MixedFeatureNet() 
 
-        self.features = nn.Sequential(*list(net.children())[:-4])  # Adjust according to the architecture
+        self.features = nn.Sequential(*list(net.children())[:-4])  
         self.num_head = num_head
         for i in range(int(num_head)):
             setattr(self, "cat_head%d" % (i), CoordAttHead())
 
-        # self.Linear = Linear_block(512, 512, groups=512, kernel=(7, 7, 7), stride=(1, 1, 1), padding=
+        
         self.pool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.flatten = Flatten()
         self.dropout = nn.Dropout(dropout)
@@ -134,7 +134,6 @@ class DDAMNet(nn.Module):
             y = torch.max(y, heads[i])
 
         y = x * y
-        # y = self.Linear(y)
         y = self.pool(y)
         y = self.flatten(y)
         y = self.dropout(y)
