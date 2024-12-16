@@ -13,7 +13,6 @@ def extract_text(model, raw_data_dir, output_dir) -> int:
         if not os.path.isdir(actor_path):
             continue
 
-        # Prepare output path for this actor
         actor_output_path = os.path.join(output_dir, actor_dir)
         os.makedirs(actor_output_path, exist_ok=True)
 
@@ -21,7 +20,6 @@ def extract_text(model, raw_data_dir, output_dir) -> int:
             if filename.endswith(".wav"):
                 filepath = os.path.join(actor_path, filename)
 
-                # Parse the filename to extract ZZ
                 parts = filename.split('-')
                 if len(parts) < 3:
                     continue
@@ -30,12 +28,10 @@ def extract_text(model, raw_data_dir, output_dir) -> int:
                 os.makedirs(ZZ_output_path, exist_ok=True)
                 count = len(os.listdir(ZZ_output_path))
 
-                # Load the audio
                 y, sr = librosa.load(filepath, sr=None)
                 data = librosa.to_mono(y)
                 result = pipe(data)
 
-                # Save the original audio
                 out_filepath = os.path.join(ZZ_output_path, f"{filename.replace(".wav", ".txt")}")
                 f = open(out_filepath, "x", encoding="utf-8")
                 f.write(result["text"])
