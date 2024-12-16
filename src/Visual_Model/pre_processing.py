@@ -114,7 +114,7 @@ IMAGE_SIZE = (112, 112)
 NUM_WORKERS = 6
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Basic transformation to convert PIL Image to tensor and resize
+
 basic_transform = transforms.Compose([
     transforms.Resize(IMAGE_SIZE),
     transforms.Grayscale(),
@@ -137,11 +137,11 @@ def get_augmentation_transform():
 
 
 def reduce_to_16_elements(tensor_list):
-    # Calculate indices to keep
+    
     original_length = len(tensor_list)
     indices = np.linspace(0, original_length - 1, 16, dtype=int)
 
-    # Select only the elements at the calculated indices
+    
     reduced_list = [tensor_list[i] for i in indices]
 
     return reduced_list
@@ -164,7 +164,7 @@ def preprocess_and_save(data_dir, save_dir):
                     label_save_folder = os.path.join(actor_save_folder, label)
                     os.makedirs(label_save_folder, exist_ok=True)
                     image_files_dir = extracted_faces
-                    # Original video without augmentation
+                    
                     save_path = os.path.join(label_save_folder, "video_" + str(len(os.listdir(label_save_folder))) + ".pt")
                     video_tensor = []
                     image_files = sorted(os.listdir(image_files_dir))
@@ -172,10 +172,10 @@ def preprocess_and_save(data_dir, save_dir):
                         if image_file.endswith('.bmp'):
                             image_path = os.path.join(image_files_dir, image_file)
                             image = Image.open(image_path).convert('L')
-                            image_np = np.expand_dims(np.array(image), axis=-1)  # Shape: (H, W, 1)
+                            image_np = np.expand_dims(np.array(image), axis=-1)  
                             video_tensor.append(image_np)
                     video_tensor = reduce_to_16_elements(video_tensor)
-                    # Convert to tensor and save
+                    
                     frames = []
                     basic_transform = A.Compose([
                         A.Resize(height=112, width=112),
@@ -185,24 +185,24 @@ def preprocess_and_save(data_dir, save_dir):
                     for frame in video_tensor:
                         transformed = basic_transform(image=frame)
                         frames.append(transformed['image'])
-                    frames = torch.stack(frames).permute(1, 0, 2, 3)  # Shape: (channels, frames, height, width)
+                    frames = torch.stack(frames).permute(1, 0, 2, 3)  
                     torch.save(frames, save_path)
 
-                    # Generate augmented versions
+                   
                     num_augmented_versions = 9
                     for _ in range(num_augmented_versions):
                         save_path = os.path.join(label_save_folder,
                                                  "video_" + str(len(os.listdir(label_save_folder))) + ".pt")
                         video_tensor_augmented = []
-                        # Get a random augmentation transform for the entire video
+                        
                         augmentation_transform = get_augmentation_transform()
-                        # Apply to the first frame to get replay params
+                        
                         first_frame = video_tensor[0]
                         transformed = augmentation_transform(image=first_frame)
                         augmented_frame = transformed['image']
                         replay_params = transformed['replay']
                         video_tensor_augmented.append(augmented_frame)
-                        # Apply the same augmentation to the rest of the frames using replay
+                        
                         for frame in video_tensor[1:]:
                             transformed = A.ReplayCompose.replay(replay_params, image=frame)
                             augmented_frame = transformed['image']
