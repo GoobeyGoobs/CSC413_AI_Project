@@ -20,7 +20,7 @@ PROCESSED_DATA_DIR = r"E:\CSC413_Data\FUSION_DATA"
 IMAGE_SIZE = (112, 112)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Audio parameters
+
 SAMPLE_RATE = 22050
 N_MFCC = 48
 N_FFT = 2048
@@ -29,10 +29,10 @@ WIN_LENGTH = 2048
 FMIN = 50
 FMAX = 8000
 
-# Text parameters
+
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-# Basic transformation to convert PIL Image to tensor and resize
+
 basic_transform = transforms.Compose([
     transforms.Resize(IMAGE_SIZE),
     transforms.Grayscale(),
@@ -40,11 +40,9 @@ basic_transform = transforms.Compose([
 ])
 
 def reduce_to_16_elements(tensor_list):
-    # Calculate indices to keep
     original_length = len(tensor_list)
     indices = np.linspace(0, original_length - 1, 16, dtype=int)
 
-    # Select only the elements at the calculated indices
     reduced_list = [tensor_list[i] for i in indices]
 
     return reduced_list
@@ -75,17 +73,17 @@ def preprocess_and_save(data_dir, save_dir):
                     save_path = os.path.join(label_save_folder,
                                              "combined" + str(len(os.listdir(label_save_folder))) + ".pt"
                                              )
-                    # Video retrieval
+                    
                     video_tensor = []
                     image_files = sorted(os.listdir(image_files_dir))
                     for image_file in image_files:
                         if image_file.endswith('.bmp'):
                             image_path = os.path.join(image_files_dir, image_file)
                             image = Image.open(image_path).convert('L')
-                            image_np = np.expand_dims(np.array(image), axis=-1)  # Shape: (H, W, 1)
+                            image_np = np.expand_dims(np.array(image), axis=-1)  
                             video_tensor.append(image_np)
                     video_tensor = reduce_to_16_elements(video_tensor)
-                    # Convert to tensor and save
+                    
                     frames = []
                     basic_transform = A.Compose([
                         A.Resize(height=112, width=112),
@@ -95,10 +93,10 @@ def preprocess_and_save(data_dir, save_dir):
                     for frame in video_tensor:
                         transformed = basic_transform(image=frame)
                         frames.append(transformed['image'])
-                    frames = torch.stack(frames).permute(1, 0, 2, 3)  # Shape: (channels, frames, height, width)
+                    frames = torch.stack(frames).permute(1, 0, 2, 3)  
                     combined_data.append(frames)
 
-                    # Audio retrieval
+                    
                     audio_filename = extracted_dir.split("_")[0] + ".wav"
                     audio_filename = "03" + audio_filename[2:]
                     audio_dir = os.path.join(AUDIO_DIR, curr_actor, audio_filename)
@@ -110,7 +108,7 @@ def preprocess_and_save(data_dir, save_dir):
                                                 n_fft=N_FFT, hop_length=HOP_LENGTH,
                                                 win_length=WIN_LENGTH, fmin=FMIN, fmax=FMAX)
 
-                    # Normalize per file
+                   
                     mean = np.mean(mfcc, axis=1, keepdims=True)
                     std = np.std(mfcc, axis=1, keepdims=True) + 1e-6
                     norm = (mfcc - mean) / std
@@ -118,7 +116,7 @@ def preprocess_and_save(data_dir, save_dir):
 
                     combined_data.append(norm)
 
-                    # Text retrieval
+                    
                     text_filename = extracted_dir.split("_")[0] + ".txt"
                     txt_label = text_filename.split("-")[2]
                     text_filename = "03" + text_filename[2:]
