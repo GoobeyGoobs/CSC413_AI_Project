@@ -28,12 +28,12 @@ def collate_fn(batch):
 # Replace with correct class initializations and any arguments they require
 visual_model = DDAMNet().to(device)
 audio_model = BiLSTMClassifier(48, 64, 8, num_layers=2, dropout=0.0).to(device)
-text_model = BERTCNN(256, [2, 3, 4], 0.0).to(device)
+text_model = BERTCNN(64, [3, 4, 5], 0.0).to(device)
 
 # Load state dicts for each model (replace with actual paths)
-visual_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Visual_Model\saved_models\RAVDESS_epoch20_acc0.6294.pth", map_location=device)["model_state_dict"])
-audio_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Audio_Model\best_model_trial_7_acc_0.5417.pt", map_location=device))
-text_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\best_model_accuracy_1.0.pt", map_location=device))
+visual_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Visual_Model\saved_models\saved_ddamfn_model.pth", map_location=device)["model_state_dict"])
+audio_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Audio_Model\saved_bilstm_model.pt", map_location=device))
+text_model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\saved_models\saved_bertcnn_model.pt", map_location=device))
 
 visual_model.eval()
 audio_model.eval()
@@ -124,8 +124,6 @@ with torch.no_grad():
         if pred_label == true_label:
             correct += 1
         total += 1
-
-print(correct, total)
 
 accuracy = correct / total if total > 0 else 0.0
 print(f"Accuracy: {accuracy * 100:.2f}%")

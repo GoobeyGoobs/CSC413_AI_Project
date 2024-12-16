@@ -1,21 +1,11 @@
 import os
 import sys
-
-from sklearn.model_selection import KFold
-from torch.cpu.amp import autocast
 from tqdm import tqdm
-import argparse
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
-import torch.utils.data as data
-from torchvision import transforms, datasets
 from torch.utils.data import Dataset, DataLoader
-import glob
 import shutil
-import random
-from torch.cuda.amp import GradScaler
 
 from DDA3D import DDAMNet
 import torch.nn.functional as F
@@ -47,25 +37,6 @@ def split_dataset(actor_list, dest_dir):
                     dest_file = os.path.join(dest_class_path, f"{actor}_{file}")  # Keep track of actor in filename
                     shutil.copyfile(src_file, dest_file)
 
-# class RAVDESSDataset(Dataset):
-#     def __init__(self, data_dir, transform=None):
-#         self.data_dir = data_dir
-#         self.transform = transform
-#         self.file_paths = glob.glob(os.path.join(data_dir, '*', '*'))  # Get all files in all class folders
-#
-#     def __len__(self):
-#         return len(self.file_paths)
-#
-#     def __getitem__(self, idx):
-#         file_path = self.file_paths[idx]
-#         label = int(os.path.basename(os.path.dirname(file_path))) - 1  # Class labels are 1-8, convert to 0-7
-#         tensor = torch.load(file_path)  # Load the tensor from file
-#
-#         if self.transform:
-#             tensor = self.transform(tensor)
-#
-#         return tensor.float(), label
-
 class RAVDESSDataset(Dataset):
     def __init__(self, data_dir):
         self.data_dir = data_dir
@@ -91,58 +62,6 @@ class RAVDESSDataset(Dataset):
         frames = torch.load(video_path)  # Shape: (channels, frames, height, width)
         label = self.labels[idx]
         return frames, label
-
-
-# Example of iterating through the DataLoader
-# for data, labels in train_loader:
-#     print(data.shape, labels)  # Data shape depends on the tensor size, labels are class indices
-#     break
-
-
-
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--aff_path', type=str, default='/data/affectnet/', help='AffectNet dataset path.')
-    parser.add_argument('--batch_size', type=int, default=256, help='Batch size.')
-    parser.add_argument('--lr', type=float, default=0.0001, help='Initial learning rate for adam.')
-    parser.add_argument('--workers', default=8, type=int, help='Number of data loading workers.')
-    parser.add_argument('--epochs', type=int, default=40, help='Total training epochs.')
-    parser.add_argument('--num_head', type=int, default=2, help='Number of attention head.')
-    parser.add_argument('--num_class', type=int, default=7, help='Number of class.')
-    return parser.parse_args()
-
-
-class ImbalancedDatasetSampler(data.sampler.Sampler):
-    def __init__(self, dataset, indices: list = None, num_samples: int = None):
-        self.indices = list(range(len(dataset))) if indices is None else indices
-        self.num_samples = len(self.indices) if num_samples is None else num_samples
-
-        df = pd.DataFrame()
-        df["label"] = self._get_labels(dataset)
-        df.index = self.indices
-        df = df.sort_index()
-
-        label_to_count = df["label"].value_counts()
-
-        weights = 1.0 / label_to_count[df["label"]]
-
-        self.weights = torch.DoubleTensor(weights.to_list())
-
-    def _get_labels(self, dataset):
-        if isinstance(dataset, datasets.ImageFolder):
-            return [x[1] for x in dataset.imgs]
-        elif isinstance(dataset, torch.utils.data.Subset):
-            return [dataset.dataset.imgs[i][1] for i in dataset.indices]
-        else:
-            raise NotImplementedError
-
-    def __iter__(self):
-        return (self.indices[i] for i in torch.multinomial(self.weights, self.num_samples, replacement=True))
-
-    def __len__(self):
-        return self.num_samples
-
 
 class AttentionLoss(nn.Module):
     def __init__(self, ):
@@ -177,8 +96,6 @@ class LabelSmoothingCrossEntropy(nn.Module):
         return loss
 
 def run_training():
-    # args = parse_args()
-    # root_dir = Path(__file__).resolve()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if torch.cuda.is_available():
@@ -187,82 +104,28 @@ def run_training():
         torch.backends.cudnn.enabled = True
         torch.cuda.empty_cache()
 
-    model = DDAMNet(num_class=8, num_head=2)
-    model.to(device)
-
-    # # Get all actor directories
-    # actors = [actor for actor in os.listdir(dataset_dir) if os.path.isdir(os.path.join(dataset_dir, actor))]
-    #
-    # # Shuffle actors for random split
-    # random.seed(42)  # For reproducibility
-    # random.shuffle(actors)
-    #
-    # # Split actors into train, val, and test sets
-    # train_actors = actors[:int(0.7 * len(actors))]
-    # val_actors = actors[int(0.7 * len(actors)):int(0.85 * len(actors))]
-    # test_actors = actors[int(0.85 * len(actors)):]
-    #
-    # # Split dataset into train, val, and test
-    # split_dataset(train_actors, train_dir)
-    # split_dataset(val_actors, val_dir)
-    # split_dataset(test_actors, test_dir)
-
     # Create datasets
     dirname = os.path.dirname(__file__)
     print(dirname)
     print(dirname + r"/V2_FPS16_AUGMENTS/TRAIN")
     train_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/TRAIN")
     val_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/VAL")
-    test_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/TEST")
 
     # Create data loaders
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=True, num_workers=6, pin_memory=True)
 
-
-    # train_dataset = datasets.ImageFolder(f'{args.aff_path}/train')
-    # if args.num_class == 7:  # ignore the 8-th class
-    #     idx = [i for i in range(len(train_dataset)) if train_dataset.imgs[i][1] != 7]
-    #     train_dataset = data.Subset(train_dataset, idx)
-    #
-    # print('Whole train set size:', train_dataset.__len__())
-    # train_loader = torch.utils.data.DataLoader(train_dataset,
-    #                                            batch_size=args.batch_size,
-    #                                            num_workers=args.workers,
-    #                                            sampler=ImbalancedDatasetSampler(train_dataset),
-    #                                            shuffle=False,
-    #                                            pin_memory=True)
-    #
-    # data_transforms_val = transforms.Compose([
-    #     transforms.Resize((112, 112)),
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(mean=[0.485, 0.456, 0.406],
-    #                          std=[0.229, 0.224, 0.225])])
-
-    # val_dataset = datasets.ImageFolder(f'{args.aff_path}/val', transform=data_transforms_val)
-    # if args.num_class == 7:  # ignore the 8-th class
-    #     idx = [i for i in range(len(val_dataset)) if val_dataset.imgs[i][1] != 7]
-    #     val_dataset = data.Subset(val_dataset, idx)
-    #
-    # print('Validation set size:', val_dataset.__len__())
-    #
-    # val_loader = torch.utils.data.DataLoader(val_dataset,
-    #                                          batch_size=args.batch_size,
-    #                                          num_workers=args.workers,
-    #                                          shuffle=False,
-    #                                          pin_memory=True)
+    model = DDAMNet(num_class=8, num_head=2, dropout=0.7)
+    model.to(device)
     best_acc = 0
-    epochs = 40
+    epochs = 50
     class_counts = np.bincount(train_dataset.labels)
     class_weights = 1. / class_counts
     class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
     criterion_cls = torch.nn.CrossEntropyLoss(class_weights).to(device)
-    # criterion_cls = LabelSmoothingCrossEntropy(smoothing=0.1).to(device) TRY NEXT
     criterion_at = AttentionLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-2)
-    # optimizer = torch.optim.Adam(params, lr=0.001,  weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, min_lr=1e-6) TRY NEXT
 
     for epoch in tqdm(range(1, epochs + 1)):
         torch.cuda.empty_cache()
@@ -285,9 +148,6 @@ def run_training():
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-
-            # loss.backward()
-            # optimizer.step()
 
             running_loss += loss
             _, predicts = torch.max(out, 1)
@@ -339,13 +199,6 @@ def run_training():
                                         "RAVDESS_epoch" + str(epoch) + "_acc" + str(acc) + ".pth"))
                 tqdm.write('Model saved.')
 
-            # elif acc > 0.632:
-            #     torch.save({'iter': epoch,
-            #                 'model_state_dict': model.state_dict(),
-            #                 'optimizer_state_dict': optimizer.state_dict(), },
-            #                os.path.join('checkpoints', "affecnet8_epoch" + str(epoch) + "_acc" + str(acc) + ".pth"))
-            #     tqdm.write('Model saved.')
-
 def test_model():
     dirname = os.path.dirname(__file__)
     test_dataset = RAVDESSDataset(dirname + r"/V2_FPS16_AUGMENTS/TEST")
@@ -358,10 +211,9 @@ def test_model():
 
     with torch.no_grad():
         iter_cnt = 0
-        bingo_cnt = 0
+        correct_cnt = 0
         sample_cnt = 0
         model.eval()
-        print("Evaluating")
         for imgs, targets in test_loader:
             imgs = imgs.to(device)
             targets = targets.to(device)
@@ -370,13 +222,13 @@ def test_model():
             iter_cnt += 1
             _, predicts = torch.max(out, 1)
             correct_num = torch.eq(predicts, targets)
-            bingo_cnt += correct_num.sum().cpu()
+            correct_cnt += correct_num.sum().cpu()
             sample_cnt += out.size(0)
 
-        acc = bingo_cnt.float() / float(sample_cnt)
+        acc = correct_cnt.float() / float(sample_cnt)
         acc = np.around(acc.numpy(), 4)
         print(f"Test accuracy:{acc}")
 
 if __name__ == "__main__":
-    # run_training()
-    test_model()
+    run_training()
+    # test_model()

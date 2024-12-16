@@ -239,7 +239,7 @@ class Mix_Residual(Module):
 
 
 class MixedFeatureNet(Module):
-    def __init__(self, embedding_size=128, out_d=2, out_h=7, out_w=7):
+    def __init__(self, embedding_size=128, dropout = 0.0, out_h=7, out_w=7):
         super(MixedFeatureNet, self).__init__()
         # Input size: L x 112 x 112
         self.conv1 = Conv_block(1, 16, kernel=(3, 3, 3), stride=(1, 2, 2), padding=(1, 1, 1))
@@ -269,7 +269,7 @@ class MixedFeatureNet(Module):
                                    kernel_sizes=[(3, 3, 3), (5, 5, 5), (7, 7, 7)],
                                    split_out_channels=[43, 42, 43])
         self.conv_6_sep = Conv_block(64, 128, kernel=(1, 1, 1), stride=(1, 1, 1), padding=(0, 0, 0))
-        self.dropout_conv6 = Dropout3d(0.7)
+        self.dropout_conv6 = Dropout3d(dropout)
         self.conv_6_dw = Linear_block(128, 128, groups=128, kernel=(7, out_h, out_w), stride=(1, 1, 1), padding=(0, 0, 0))
         self.conv_6_flatten = Flatten()
         self.linear = Linear(128, embedding_size, bias=False)

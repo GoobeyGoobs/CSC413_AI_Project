@@ -1,5 +1,4 @@
 import os
-
 import pandas as pd
 import torch
 from torch import nn
@@ -14,11 +13,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Dataset Class
 class RAVDESSBertDataset(Dataset):
     def __init__(self, file_path, tokenizer, max_len=64):
-        self.df = pd.read_csv(file_path)[['transcription']]
+        # Load the data
+        self.df = pd.read_csv(file_path)
         self.tokenizer = tokenizer
         self.max_len = max_len
-        # Placeholder labels (replace with actual labels when available)
-        self.df['emotion'] = 0
+
+        # Map emotion strings to integer labels
+        self.emotion_to_label = {
+            "Neutral": 0, "Calm": 1, "Happy": 2, "Sad": 3,
+            "Angry": 4, "Fearful": 5, "Disgust": 6, "Surprised": 7
+        }
+        self.df['emotion'] = self.df['emotion'].map(self.emotion_to_label)
 
     def __len__(self):
         return len(self.df)
@@ -41,7 +46,7 @@ class RAVDESSBertDataset(Dataset):
 
         return input_ids, attention_mask, emotion_label
 
-# Attention Module
+# Attention Modules
 class AttentionHead(nn.Module):
     def __init__(self, dim_inp, dim_out):
         super(AttentionHead, self).__init__()
@@ -91,7 +96,7 @@ class Encoder(nn.Module):
 class BERTCNN(nn.Module):
     def __init__(self, num_filters, kernel_sizes, dropout=0.1):
         super(BERTCNN, self).__init__()
-        self.embedding = nn.Embedding(30522, 768)  # Standard BERT embedding
+        self.embedding = nn.Embedding(30522, 768)  # Standard BERT embedding size
         self.encoder = Encoder(dim_inp=768, dim_out=768)
 
         self.convs = nn.ModuleList([
@@ -99,7 +104,7 @@ class BERTCNN(nn.Module):
             for k in kernel_sizes
         ])
 
-        self.fc = nn.Linear(len(kernel_sizes) * num_filters, 8)  # 7 classes
+        self.fc = nn.Linear(len(kernel_sizes) * num_filters, 8)  # 8 classes for emotions
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, input_ids, attention_mask):
@@ -115,7 +120,7 @@ class BERTCNN(nn.Module):
 
 # Trainer
 class BertTrainer:
-    def __init__(self, model, train_loader, val_loader, lr, epochs):
+    def __init__(self, model, train_loader, val_loader, lr, epochs, model_save_path="model_weights"):
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -123,6 +128,11 @@ class BertTrainer:
         self.criterion = nn.CrossEntropyLoss()
         self.epochs = epochs
         self.scaler = GradScaler()
+        self.model_save_path = model_save_path  # Directory to save weights
+
+        # Create model save directory if it doesn't exist
+        if not os.path.exists(self.model_save_path):
+            os.makedirs(self.model_save_path)
 
     def train(self):
         self.model.train()
@@ -155,6 +165,11 @@ class BertTrainer:
             epoch_accuracy = correct_predictions / total_samples
             print(f"Epoch {epoch + 1}/{self.epochs}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.4f}")
 
+            # Save model weights after each epoch
+            model_file = os.path.join(self.model_save_path, f"epoch_{epoch+1}_accuracy_{epoch_accuracy:.4f}.pt")
+            torch.save(self.model.state_dict(), model_file)
+            print(f"Model weights saved to: {model_file}")
+
     def validate(self):
         self.model.eval()
         correct = 0
@@ -170,25 +185,21 @@ class BertTrainer:
                 _, preds = torch.max(outputs, dim=1)
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
-        acc = correct / total
-        model_path = f"best_model_accuracy_{acc}.pt"
-        torch.save(self.model.state_dict(), model_path)
         return correct / total
 
 
 # Optuna Objective
-
 def objective(trial):
-    # learning_rate = trial.suggest_loguniform("lr", 1e-6, 1e-3)
-    # batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
-    # num_filters = trial.suggest_categorical("num_filters", [64, 128, 256])
-    # kernel_sizes = trial.suggest_categorical("kernel_sizes", [[2, 3, 4], [3, 4, 5]])
-    # dropout = trial.suggest_uniform("dropout", 0.1, 0.5)
-    learning_rate = 2.375e-5
-    batch_size = 32
-    num_filters = 256
-    kernel_sizes = [2, 3, 4]
-    dropout = 0.22318
+    learning_rate = trial.suggest_loguniform("lr", 1e-6, 1e-3)
+    batch_size = trial.suggest_categorical("batch_size", [8, 16, 32])
+    num_filters = trial.suggest_categorical("num_filters", [64, 128, 256])
+    kernel_sizes = trial.suggest_categorical("kernel_sizes", [[2, 3, 4], [3, 4, 5]])
+    dropout = trial.suggest_uniform("dropout", 0.1, 0.5)
+    learning_rate = 0.00013136541947437186
+    batch_size = 16
+    num_filters = 64
+    kernel_sizes = [3, 4, 5]
+    dropout = 0.4441381671307012
 
     dataset_size = len(dataset)
     train_size = int(0.8 * dataset_size)
@@ -209,19 +220,66 @@ def objective(trial):
         train_loader=train_loader,
         val_loader=val_loader,
         lr=learning_rate,
-        epochs=5,  # Fixed for tuning
+        epochs=20,
+        model_save_path=r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\saved_models",
     )
 
     trainer.train()
     validation_accuracy = trainer.validate()
     return validation_accuracy
 
+# Test the Model
+def test_model(model, test_loader):
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for input_ids, attention_mask, labels in test_loader:
+            input_ids, attention_mask, labels = (
+                input_ids.to(device),
+                attention_mask.to(device),
+                labels.to(device),
+            )
+            outputs = model(input_ids, attention_mask)
+            _, preds = torch.max(outputs, dim=1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+    return correct / total
+
 if __name__ == "__main__":
     # Main Script
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-    dataset_path = r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\transcriptions.csv"
+    dataset_path = r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\BERTCNN_DATA.csv"
     dataset = RAVDESSBertDataset(file_path=dataset_path, tokenizer=tokenizer, max_len=64)
+    #
+    # # Run Optuna for hyperparameter optimization
+    # study = optuna.create_study(direction="maximize")
+    # study.optimize(objective, n_trials=5)
+    # print("Best hyperparameters:", study.best_params)
 
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=3)
-    print("Best hyperparameters:", study.best_params)
+    learning_rate = 0.00013136541947437186
+    batch_size = 16
+    num_filters = 64
+    kernel_sizes = [3, 4, 5]
+    dropout = 0.4441381671307012
+
+    dataset_size = len(dataset)
+    train_size = int(0.8 * dataset_size)
+    val_size = int(0.1 * dataset_size)
+    test_size = int(0.1 * dataset_size)
+    train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
+
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    model = BERTCNN(
+        num_filters=num_filters,
+        kernel_sizes=kernel_sizes,
+        dropout=dropout,
+    ).to(device)
+
+    # Load Saved Model Weights (optional)
+    model.load_state_dict(torch.load(r"C:\Users\singh\PycharmProjects\CSC413_AI_Project\src\Text_Model\saved_models\saved_bertcnn_model.pt"))
+
+    # Calculate Test Accuracy
+    test_accuracy = test_model(model, test_loader)
+    print(f"Test Accuracy: {test_accuracy:.4f}")

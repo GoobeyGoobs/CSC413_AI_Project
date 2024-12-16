@@ -2,7 +2,6 @@ from torch import nn
 import torch  # Use the updated 3D version of MixedFeatureNet
 from torch.nn import Module
 from src.Visual_Model.MFN3D import MixedFeatureNet
-import os
 
 
 class Linear_block(Module):
@@ -103,7 +102,7 @@ class CoordAttHead(nn.Module):
 
 
 class DDAMNet(nn.Module):
-    def __init__(self, num_class=8, num_head=2, pretrained=False):
+    def __init__(self, num_class=8, num_head=2, dropout=0.0):
         super(DDAMNet, self).__init__()
 
         net = MixedFeatureNet()  # Use the updated 3D MixedFeatureNet
@@ -116,7 +115,7 @@ class DDAMNet(nn.Module):
         # self.Linear = Linear_block(512, 512, groups=512, kernel=(7, 7, 7), stride=(1, 1, 1), padding=
         self.pool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.flatten = Flatten()
-        self.dropout = nn.Dropout(0.7)
+        self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(128, num_class)
         self.bn = nn.BatchNorm1d(num_class)
 

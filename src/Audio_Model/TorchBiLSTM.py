@@ -11,16 +11,10 @@ import optuna
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def collate_fn(batch):
-    # batch is a list of (mfcc_tensor, label_tensor)
     mfccs = [item[0] for item in batch]
     labels = [item[1] for item in batch]
-
-    # mfccs is a list of tensors of shape (time, n_mfcc)
-    # Pad them along the time dimension so all have the same length
-    mfccs_padded = pad_sequence(mfccs, batch_first=True)  # shape: (batch, max_time, n_mfcc)
-
-    labels = torch.stack(labels)  # shape: (batch,)
-
+    mfccs_padded = pad_sequence(mfccs, batch_first=True)
+    labels = torch.stack(labels)
     return mfccs_padded, labels
 
 
@@ -204,7 +198,7 @@ def objective(trial):
     # optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, alpha=0.9, eps=1e-7, weight_decay=0.0)
     best_val_acc = 0.0
-    num_epochs = 50  # You can increase this
+    num_epochs = 15  # You can increase this
     for epoch in range(num_epochs):
         train_loss, train_acc = train_one_epoch(model, optimizer, criterion, train_loader)
         val_loss, val_acc = evaluate(model, criterion, val_loader)
