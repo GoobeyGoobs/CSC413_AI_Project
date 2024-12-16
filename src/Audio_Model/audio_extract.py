@@ -4,8 +4,8 @@ import numpy as np
 import librosa
 import soundfile as sf
 
-raw_data_dir = r"E:\CSC413_Data\RAW_CLIPS"  # Path to raw audio data
-output_dir = r"E:\CSC413_Data\AUDIO_CLIPS"  # Directory to save extracted audio
+raw_data_dir = r"E:\CSC413_Data\RAW_CLIPS" 
+output_dir = r"E:\CSC413_Data\AUDIO_CLIPS" 
 os.makedirs(output_dir, exist_ok=True)
 
 def trim_silence(y, top_db=20):
@@ -55,24 +55,20 @@ def augment_audio(raw_data_dir, output_dir) -> int:
                         gain_factor = 10**(gain_db/20)
                         y_aug = y_aug * gain_factor
 
-                    # Time stretching
                     if random.random() < p_time_stretch:
                         time_stretch_factor = random.uniform(0.9, 1.1)
                         y_aug = librosa.effects.time_stretch(y_aug, rate=time_stretch_factor)
 
-                    # Pitch shifting
                     if random.random() < p_pitch_shift:
                         pitch_shift_steps = random.uniform(-1, 1)
                         y_aug = librosa.effects.pitch_shift(y_aug, sr=sr, n_steps=pitch_shift_steps)
 
-                    # Add noise
                     if random.random() < p_noise:
                         noise_factor = random.uniform(0.005, 0.015)
                         y_aug = y_aug + noise_factor * np.random.randn(len(y_aug))
 
                     y_aug = trim_silence(y_aug, top_db=20)
 
-                    # Save augmented file
                     aug_filepath = os.path.join(ZZ_output_path, f"audio_{count}.wav")
                     sf.write(aug_filepath, y_aug, sr)
                     count += 1
