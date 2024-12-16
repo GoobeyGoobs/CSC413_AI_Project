@@ -126,8 +126,8 @@ class CoordAtt3D(nn.Module):
         x_h = self.pool_h(x)
         x_w = self.pool_w(x)
 
-        x_d = x_d.permute(0, 1, 3, 4, 2)  # Move D to last dimension
-        x_h = x_h.permute(0, 1, 2, 4, 3)  # Move H to last dimension
+        x_d = x_d.permute(0, 1, 3, 4, 2)  
+        x_h = x_h.permute(0, 1, 2, 4, 3) 
 
         y = torch.cat([x_d, x_h, x_w], dim=-1)
         y = self.conv1(y)
